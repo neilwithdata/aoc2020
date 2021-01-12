@@ -2,20 +2,19 @@ import java.io.File
 
 fun main() {
     val lines = File("data/day05_input.txt").readLines()
-    var highest = lines.first()
 
-    for (line in lines) {
-        for ((i, c) in line.withIndex()) {
-            if ((c == 'B' && highest[i] == 'F') || (c == 'R' && highest[i] == 'L')) {
-                highest = line // New highest found - can go to next line
-                break
-            } else if ((c == 'F' && highest[i] == 'B') || (c == 'L' && highest[i] == 'R')) {
-                break // Always going to be lower - can go to next line
-            }
+    val min: Int
+    val max: Int
+    val sum: Int
+
+    lines.map { calculateSeatId(it) }
+        .also { seatIds ->
+            sum = seatIds.sum()
+            min = seatIds.minOrNull()!!
+            max = seatIds.maxOrNull()!!
         }
-    }
 
-    println("highest: $highest has seat ID: ${calculateSeatId(highest)}")
+    println("The missing seat ID is ${(min..max).sum() - sum}")
 }
 
 private fun calculateSeatId(code: String): Int {
