@@ -2,7 +2,7 @@ import java.io.File
 import java.math.BigInteger
 import java.util.*
 
-const val WINDOW_SIZE = 25
+private const val WINDOW_SIZE = 25
 
 fun main() {
     val window: Queue<BigInteger> = LinkedList()
