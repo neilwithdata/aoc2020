@@ -23,7 +23,6 @@ fun main() {
     println(departureValues.fold(1L) { acc, i ->
         acc * i
     })
-
 }
 
 private fun getDepartureValues(lines: List<String>, candidates: List<String>): List<Int> {
