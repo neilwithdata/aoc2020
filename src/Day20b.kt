@@ -1,84 +1,81 @@
 import java.io.File
 import kotlin.math.sqrt
 
+// Utility classes
 data class Coord(val x: Int, val y: Int)
 
-fun Set<Coord>.rotated(size: Int) = this
-    .map {
-        Coord(size - 1 - it.y, it.x)
-    }.toSet()
+enum class Direction {
+    TOP {
+        override fun opposite() = BOTTOM
+    },
+    RIGHT {
+        override fun opposite() = LEFT
+    },
+    BOTTOM {
+        override fun opposite() = TOP
+    },
+    LEFT {
+        override fun opposite() = RIGHT
+    };
 
-fun Set<Coord>.mirrored(size: Int) = this
-    .map {
-        Coord(size - 1 - it.x, it.y)
-    }.toSet()
+    abstract fun opposite(): Direction
+}
 
-object UnknownTile : Tile(-1, emptySet())
-
-open class Tile(val id: Int, val marks: Set<Coord>, val size: Int = DEFAULT_SIZE) {
-    class Border(val marks: Set<Int>, val direction: Direction) {
-        enum class Direction {
-            TOP {
-                override fun opposite() = BOTTOM
-            },
-            RIGHT {
-                override fun opposite() = LEFT
-            },
-            BOTTOM {
-                override fun opposite() = TOP
-            },
-            LEFT {
-                override fun opposite() = RIGHT
-            };
-
-            abstract fun opposite(): Direction
-        }
-    }
+class Grid(val size: Int, val marks: Set<Coord>) {
+    class Border(val borderMarks: Set<Int>, val direction: Direction)
 
     val borders = listOf(
-        Border(marks.filter { it.y == 0 }.map { it.x }.toSet(), Border.Direction.TOP),
-        Border(marks.filter { it.x == size - 1 }.map { it.y }.toSet(), Border.Direction.RIGHT),
-        Border(marks.filter { it.y == size - 1 }.map { it.x }.toSet(), Border.Direction.BOTTOM),
-        Border(marks.filter { it.x == 0 }.map { it.y }.toSet(), Border.Direction.LEFT)
+        Border(marks.filter { it.y == 0 }.map { it.x }.toSet(), Direction.TOP),
+        Border(marks.filter { it.x == size - 1 }.map { it.y }.toSet(), Direction.RIGHT),
+        Border(marks.filter { it.y == size - 1 }.map { it.x }.toSet(), Direction.BOTTOM),
+        Border(marks.filter { it.x == 0 }.map { it.y }.toSet(), Direction.LEFT)
     ).associateBy { border -> border.direction }
 
-    // there are 8 unique transformations of a tile (4 rotational + combinations of mirroring and rotating)
+    private fun rotated() = Grid(
+        size,
+        marks.map {
+            Coord(size - 1 - it.y, it.x)
+        }.toSet()
+    )
+
+    private fun mirrored() = Grid(
+        size,
+        marks.map {
+            Coord(size - 1 - it.x, it.y)
+        }.toSet()
+    )
+
+    // there are 8 unique transformations of a grid (4 rotational + combinations of mirroring and rotating)
     fun transformations() = sequence {
-        var rotated = marks
+        var grid = this@Grid
         repeat(4) {
-            rotated = rotated.rotated(size)
-            yield(Tile(id, rotated, size))
+            grid = grid.rotated()
+            yield(grid)
         }
 
-        yield(Tile(id, marks.mirrored(size), size))
-        yield(Tile(id, marks.rotated(size).mirrored(size), size))
-        yield(Tile(id, marks.rotated(size).rotated(size).mirrored(size), size))
-        yield(Tile(id, marks.mirrored(size).rotated(size), size))
+        yield(grid.mirrored())
+        yield(grid.rotated().mirrored())
+        yield(grid.rotated().rotated().mirrored())
+        yield(grid.mirrored().rotated())
     }
 
-    fun stripBorders(): Tile {
-        return Tile(
-            id,
-            marks.filterNot {
-                it.x == 0 || it.x == size - 1 || it.y == 0 || it.y == size - 1
-            }.toSet(),
-            size - 2
-        ).offset(-1, -1)
-    }
+    fun stripBorders() = Grid(
+        size - 2,
+        marks.filterNot {
+            it.x == 0 || it.x == size - 1 || it.y == 0 || it.y == size - 1
+        }.toSet()
+    ).offset(-1, -1)
 
-    fun offset(dx: Int, dy: Int): Tile {
-        return Tile(
-            id,
-            marks.map {
-                Coord(it.x + dx, it.y + dy)
-            }.toSet(),
-            size
-        )
-    }
+    fun offset(dx: Int, dy: Int) = Grid(
+        size,
+        marks.map {
+            Coord(it.x + dx, it.y + dy)
+        }.toSet()
+    )
+
+    fun count() = marks.size
 
     fun print() {
-        println("Tile $id")
-
         for (y in 0 until size) {
             for (x in 0 until size) {
                 print(
@@ -93,6 +90,12 @@ open class Tile(val id: Int, val marks: Set<Coord>, val size: Int = DEFAULT_SIZE
         }
         println()
     }
+}
+
+object UnknownTile : Tile(-1, Grid(0, emptySet()))
+
+open class Tile(val id: Int, val grid: Grid) {
+    fun transformations() = grid.transformations().map { Tile(id, it) }
 
     companion object {
         const val DEFAULT_SIZE = 10
@@ -111,19 +114,43 @@ open class Tile(val id: Int, val marks: Set<Coord>, val size: Int = DEFAULT_SIZE
                 }
             }
 
-            return Tile(id, marks)
+            return Tile(id, Grid(DEFAULT_SIZE, marks))
         }
     }
 }
 
-private class Image(tiles: List<Tile>) {
-    val size = sqrt(tiles.size.toDouble()).toInt()
-    val marks: Set<Coord>
+class Pattern(val marks: Set<Coord>) {
+    val width = marks.maxOf { it.x } + 1
+    val height = marks.maxOf { it.y } + 1
 
-    init {
-        val tileArray = arrangeTiles(tiles)
-        marks = joinTiles(tileArray)
+    fun count() = marks.count()
+
+    fun offset(dx: Int, dy: Int) = Pattern(
+        marks.map {
+            Coord(it.x + dx, it.y + dy)
+        }.toSet()
+    )
+
+    companion object {
+        fun fromString(str: String): Pattern {
+            val marks = mutableSetOf<Coord>()
+
+            for ((y, line) in str.lines().withIndex()) {
+                for ((x, c) in line.withIndex()) {
+                    if (c == '#') {
+                        marks.add(Coord(x, y))
+                    }
+                }
+            }
+
+            return Pattern(marks)
+        }
     }
+}
+
+class Image(tiles: List<Tile>) {
+    val size = sqrt(tiles.size.toDouble()).toInt()
+    val grid = joinTiles(arrangeTiles(tiles))
 
     private fun arrangeTiles(tiles: List<Tile>): Array<Array<Tile?>> {
         val imageTiles: Array<Array<Tile?>> = Array(size) { Array(size) { null } }
@@ -143,19 +170,25 @@ private class Image(tiles: List<Tile>) {
         return imageTiles
     }
 
-    private fun joinTiles(tileArray: Array<Array<Tile?>>): Set<Coord> {
+    private fun joinTiles(tileArray: Array<Array<Tile?>>): Grid {
         val unified = mutableSetOf<Coord>()
 
         for (row in 0 until size) {
             for (col in 0 until size) {
                 val tile = tileArray[row][col]!!
-                val updated = tile.stripBorders().offset(col * (Tile.DEFAULT_SIZE - 2), row * (Tile.DEFAULT_SIZE - 2))
 
-                unified.addAll(updated.marks)
+                val stripped = tile.grid.stripBorders()
+                val positioned = stripped.offset(col * stripped.size, row * stripped.size)
+
+                unified.addAll(positioned.marks)
             }
         }
 
-        return unified
+        return Grid((Tile.DEFAULT_SIZE - 2) * size, unified)
+    }
+
+    fun print() {
+        grid.print()
     }
 
     private fun findTile(
@@ -171,14 +204,14 @@ private class Image(tiles: List<Tile>) {
         }
 
         // find true if `tile` has `required` tile in the specified `direction` (based on border marks)
-        fun match(tile: Tile, direction: Tile.Border.Direction, required: Tile?): Boolean {
+        fun match(tile: Tile, direction: Direction, required: Tile?): Boolean {
             val foundTile = tileCollection
                 .filter { it.id != tile.id }
                 .firstOrNull { candidate ->
-                    val tileBorder = tile.borders[direction]!!
-                    val candidateBorder = candidate.borders[direction.opposite()]!!
+                    val tileBorder = tile.grid.borders[direction]!!
+                    val candidateBorder = candidate.grid.borders[direction.opposite()]!!
 
-                    tileBorder.marks == candidateBorder.marks
+                    tileBorder.borderMarks == candidateBorder.borderMarks
                 }
 
             return when (required) {
@@ -189,32 +222,39 @@ private class Image(tiles: List<Tile>) {
         }
 
         return candidates.first { tile ->
-            match(tile, Tile.Border.Direction.TOP, top) &&
-                    match(tile, Tile.Border.Direction.RIGHT, right) &&
-                    match(tile, Tile.Border.Direction.BOTTOM, bottom) &&
-                    match(tile, Tile.Border.Direction.LEFT, left)
+            match(tile, Direction.TOP, top) &&
+                    match(tile, Direction.RIGHT, right) &&
+                    match(tile, Direction.BOTTOM, bottom) &&
+                    match(tile, Direction.LEFT, left)
         }
     }
 
-    fun print() {
-        for (y in 0 until (Tile.DEFAULT_SIZE - 2) * size) {
-            for (x in 0 until (Tile.DEFAULT_SIZE - 2) * size) {
-                print(
-                    if (marks.contains(Coord(x, y))) {
-                        '#'
-                    } else {
-                        '.'
+    // Return a count of the number of times `pattern` is found in the image (may require transformation first)
+    fun search(pattern: Pattern): Int {
+        for (transformation in grid.transformations()) {
+            var count = 0
+            for (dx in 0..(transformation.size - pattern.width)) {
+                for (dy in 0..(transformation.size - pattern.height)) {
+                    val offset = pattern.offset(dx, dy)
+
+                    if (transformation.marks.containsAll(offset.marks)) {
+                        count++
                     }
-                )
+                }
             }
-            println()
+
+            // this is the right transformation for the image
+            if (count > 0) {
+                return count
+            }
         }
-        println()
+
+        return 0
     }
 }
 
 fun main() {
-    val lines = File("data/day20_testing.txt")
+    val lines = File("data/day20_input.txt")
         .readLines()
 
     val tiles = lines
@@ -229,17 +269,15 @@ fun main() {
     val image = Image(tiles)
     image.print()
 
+    val monster = """
+        |                  #
+        |#    ##    ##    ###
+        | #  #  #  #  #  #
+    """.trimMargin()
 
-//    val monster = """
-//        |                  #
-//        |#    ##    ##    ###
-//        | #  #  #  #  #  #
-//    """.trimMargin()
-//
-//    val monsterLines = monster.split('\n')
-//    for (line in monsterLines) {
-//        println("line is ${line.length} and has ${line.count { it == '#' }} marks")
-//    }
+    val pattern = Pattern.fromString(monster)
+    val count = image.search(pattern)
 
-    // represent the monster as a set of coordinates and push it to every possible offset and orientation
+    val result = image.grid.count() - (count * pattern.count())
+    println("result: $result")
 }
