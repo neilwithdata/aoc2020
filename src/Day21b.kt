@@ -46,6 +46,11 @@ fun main() {
         .sum()
 
     println(result)
+
+    // sort by the allergens and then print the ingredients
+    println(solutions.toSortedMap()
+        .map { it.value }
+        .joinToString(separator = ","))
 }
 
 private fun resolve(possibles: Map<String, Set<String>>): Map<String, String> {
